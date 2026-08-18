@@ -112,6 +112,11 @@ def install() -> Dict[str, Any]:
         return {"success": False, "error": str(exc)}
 
 
+def prepare() -> Dict[str, Any]:
+    """Validate Luma's private payload without touching Moon's installation."""
+    return {"success": True, "installed": installed()}
+
+
 def launcher_environment() -> Dict[str, str]:
     """Luma's complete injection contract.
 
