@@ -42,6 +42,15 @@ def _home() -> str:
     return get_user_home()
 
 
+def _chown_user(path: str) -> None:
+    """Decky runs as root; give only our new files back to the Deck user."""
+    try:
+        from .utils import chown_to_user
+        chown_to_user(path, recursive=False)
+    except Exception:
+        pass
+
+
 def _write_json(path: str, obj: Dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.tmp.{os.getpid()}"
@@ -54,6 +63,7 @@ def _write_json(path: str, obj: Dict[str, Any]) -> None:
         except Exception:
             pass
     os.replace(tmp, path)
+    _chown_user(path)
 
 
 def _state() -> Dict[str, Any]:
@@ -83,6 +93,7 @@ def _copy_if_exists(src: str, dst: str) -> bool:
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(src, dst)
     os.chmod(dst, os.stat(src).st_mode | stat.S_IXUSR)
+    _chown_user(dst)
     return True
 
 
@@ -124,6 +135,7 @@ def _download(url: str, dest: str) -> None:
         if os.path.getsize(tmp) <= 0:
             raise RuntimeError("downloaded file is empty")
         os.replace(tmp, dest)
+        _chown_user(dest)
     finally:
         try:
             os.remove(tmp)
@@ -136,9 +148,7 @@ def _extract_7z(archive: str, dest: str) -> None:
     if not seven:
         raise RuntimeError("7z is required to install the Luma engine")
     os.makedirs(dest, exist_ok=True)
-    r = subprocess.run([seven, "x", "-aoa", f"-o{dest}", archive],
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                       text=True, timeout=300)
+    r = subprocess.run([seven, "x", "-aoa", f"-o{dest}", archive], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=300)
     if r.returncode != 0:
         raise RuntimeError("SLSsteam archive extraction failed: " + (r.stdout or "")[-1500:])
 
@@ -160,7 +170,6 @@ def install_luma() -> Dict[str, Any]:
     try:
         if not _snapshot_current_moon():
             return {"success": False, "error": "Could not snapshot the installed Moon SLSsteam.so"}
-
         os.makedirs(LUMA_ROOT, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="enginetest-luma-") as tmp:
             archive = os.path.join(tmp, "sls.7z")
@@ -178,11 +187,13 @@ def install_luma() -> Dict[str, Any]:
 
         luma_cfg = os.path.join(_home(), ".config", "lumalinux")
         os.makedirs(luma_cfg, exist_ok=True)
+        _chown_user(luma_cfg)
         keys = os.path.join(luma_cfg, "keys.txt")
         if not os.path.exists(keys):
             with open(keys, "w", encoding="utf-8") as f:
                 f.write("# LumaLinux depot key store\n")
                 f.write("# depot_id;parent_app_id;manifest_gid;manifest_size;64-hex-key\n")
+            _chown_user(keys)
 
         _write_json(os.path.join(LUMA_ROOT, "engine.json"), {
             "name": "luma", "installedAt": int(time.time()),
@@ -198,8 +209,7 @@ def install_luma() -> Dict[str, Any]:
 def _engine_ready(engine: str) -> bool:
     if engine == "moon":
         return os.path.isfile(os.path.join(MOON_ROOT, "SLSsteam.so")) or os.path.isfile(os.path.join(_shared_sls_dir(), "SLSsteam.so"))
-    return (os.path.isfile(os.path.join(LUMA_ROOT, "SLSsteam.so")) and
-            os.path.isfile(os.path.join(LUMA_ROOT, "liblumalinux.so")))
+    return os.path.isfile(os.path.join(LUMA_ROOT, "SLSsteam.so")) and os.path.isfile(os.path.join(LUMA_ROOT, "liblumalinux.so"))
 
 
 def _dispatcher_content() -> str:
@@ -246,6 +256,7 @@ def ensure_dispatcher() -> Dict[str, Any]:
         with open(DISPATCHER, "w", encoding="utf-8") as f:
             f.write(_dispatcher_content())
         os.chmod(DISPATCHER, 0o755)
+        _chown_user(DISPATCHER)
         return {"success": True, "path": DISPATCHER}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
@@ -253,16 +264,7 @@ def ensure_dispatcher() -> Dict[str, Any]:
 
 def status() -> Dict[str, Any]:
     s = _state()
-    return {
-        "success": True,
-        "selected": s.get("selected", "moon"),
-        "moonInstalled": _engine_ready("moon"),
-        "lumaInstalled": _engine_ready("luma"),
-        "dispatcher": os.path.isfile(DISPATCHER),
-        "dispatcherPath": DISPATCHER,
-        "lumaSlssteam": os.path.join(LUMA_ROOT, "SLSsteam.so"),
-        "lumaLinux": os.path.join(LUMA_ROOT, "liblumalinux.so"),
-    }
+    return {"success": True, "selected": s.get("selected", "moon"), "moonInstalled": _engine_ready("moon"), "lumaInstalled": _engine_ready("luma"), "dispatcher": os.path.isfile(DISPATCHER), "dispatcherPath": DISPATCHER, "lumaSlssteam": os.path.join(LUMA_ROOT, "SLSsteam.so"), "lumaLinux": os.path.join(LUMA_ROOT, "liblumalinux.so")}
 
 
 def set_engine(engine: str) -> Dict[str, Any]:
@@ -279,7 +281,10 @@ def set_engine(engine: str) -> Dict[str, Any]:
 
 def prepare() -> Dict[str, Any]:
     try:
-        if os.path.isfile(os.path.join(_shared_sls_dir(), "SLSsteam.so")) and not _engine_ready("moon"):
+        # Refresh the Moon snapshot whenever the shared installation changed.
+        # Luma never touches this shared location, so this remains the known-good
+        # Moon payload even after a normal Moon reinstall/update.
+        if os.path.isfile(os.path.join(_shared_sls_dir(), "SLSsteam.so")):
             _snapshot_current_moon()
         return ensure_dispatcher()
     except Exception as exc:
