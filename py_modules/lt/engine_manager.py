@@ -29,7 +29,10 @@ STATE_PATH = os.path.join(STATE_DIR, "engine.json")
 ENGINE_ROOT = os.path.join(get_user_home(), ".local", "share", "slsdeck", "engines")
 MOON_ROOT = os.path.join(ENGINE_ROOT, "moon")
 LUMA_ROOT = os.path.join(ENGINE_ROOT, "luma")
-DISPATCHER = os.path.join(get_user_home(), ".local", "share", "SLSsteam", "path", "enginetest-steam")
+# Keep the existing EngineTest gamescope hook untouched: it already launches
+# ~/.local/share/SLSsteam/path/steam. We replace that file's contents with this
+# dispatcher instead of introducing another Gaming Mode entry point.
+DISPATCHER = os.path.join(get_user_home(), ".local", "share", "SLSsteam", "path", "steam")
 
 LUMA_SO_URL = "https://github.com/jayool/lumalinux/releases/latest/download/liblumalinux.so"
 SLS_7Z_URL = "https://github.com/AceSLS/SLSsteam/releases/latest/download/SLSsteam-Any.7z"
