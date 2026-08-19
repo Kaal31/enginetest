@@ -1,8 +1,7 @@
 #include "build_fingerprint.hpp"
 #include "module_resolver.hpp"
+#include "sha256.hpp"
 
-#include <fstream>
-#include <sstream>
 #include <sys/stat.h>
 
 namespace enginetest::runtime {
@@ -21,11 +20,8 @@ bool fingerprint_loaded_module(const std::string& module_name,
     if (stat(module.path.c_str(), &st) == 0) {
         out->file_size = static_cast<std::uint64_t>(st.st_size);
     }
-
-    // Hashing is deliberately left to the engine/profile layer for now. This
-    // runtime primitive must not silently choose or download a profile.
-    out->sha256.clear();
-    return true;
+    out->sha256 = sha256_file(module.path);
+    return !out->sha256.empty();
 }
 
 } // namespace enginetest::runtime
