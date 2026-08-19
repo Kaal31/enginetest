@@ -4,6 +4,7 @@ project(enginetest_runtime LANGUAGES CXX)
 add_library(enginetest_runtime STATIC
     module_resolver.cpp
     build_fingerprint.cpp
+    sha256.cpp
 )
 
 target_include_directories(enginetest_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
